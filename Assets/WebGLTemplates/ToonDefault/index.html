@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>Chicky Cha-Cha</title>
+  <script src="mtjssdk.js" type="text/javascript"></script>
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <link rel="stylesheet" href="TemplateData/style.css">
+</head>
+
+<body>
+  <div id="unity-container" class="unity-desktop">
+    <canvas id="unity-canvas"></canvas>
+    <div id="unity-loading-bar" style="display: none;">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full" style="width: 100%;"></div>
+      </div>
+    </div>
+    <div id="unity-warning"> </div>
+    <!-- <div id="unity-footer">
+      <div id="unity-webgl-logo"></div>
+      <div id="unity-fullscreen-button"></div>
+      <div id="unity-build-title">Fruit Dart</div>
+    </div> -->
+  </div>
+
+  <script>
+    var container = document.querySelector("#unity-container");
+    var canvas = document.querySelector("#unity-canvas");
+    var loadingBar = document.querySelector("#unity-loading-bar");
+    var progressBarFull = document.querySelector("#unity-progress-bar-full");
+    // var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+    var warningBanner = document.querySelector("#unity-warning");
+
+    // Shows a temporary message banner/ribbon for a few seconds, or
+    // a permanent error message on top of the canvas if type=='error'.
+    // If type=='warning', a yellow highlight color is used.
+    // Modify or remove this function to customize the visually presented
+    // way that non-critical warnings and error messages are presented to the
+    // user.
+    function unityShowBanner(msg, type) {
+      function updateBannerVisibility() {
+        warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+      }
+      var div = document.createElement('div');
+      div.innerHTML = msg;
+      warningBanner.appendChild(div);
+      if (type == 'error') div.style = 'background: red; padding: 10px;';
+      else {
+        if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+        setTimeout(function () {
+          warningBanner.removeChild(div);
+          updateBannerVisibility();
+        }, 5000);
+      }
+      updateBannerVisibility();
+    }
+
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+    var config = {
+      dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+      frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+      codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+      #if MEMORY_FILENAME
+        memoryUrl: buildUrl + "/{{{ MEMORY_FILENAME }}}",
+      #endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+      #endif
+        streamingAssetsUrl: "StreamingAssets",
+      companyName: "{{{ COMPANY_NAME }}}",
+      productName: "{{{ PRODUCT_NAME }}}",
+      productVersion: "{{{ PRODUCT_VERSION }}}",
+    };
+
+    // By default Unity keeps WebGL canvas render target size matched with
+    // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+    // Set this to false if you want to decouple this synchronization from
+    // happening inside the engine, and you would instead like to size up
+    // the canvas DOM size and WebGL render target sizes yourself.
+    // config.matchWebGLToCanvasSize = false;
+
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      // Mobile device style: fill the whole browser client area with the game canvas:
+
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+      document.getElementsByTagName('head')[0].appendChild(meta);
+      container.className = "unity-mobile";
+      canvas.className = "unity-mobile";
+
+      // To lower canvas resolution on mobile devices to gain some
+      // performance, uncomment the following line:
+      // config.devicePixelRatio = 1;
+
+      // unityShowBanner('WebGL builds are not supported on mobile devices.');
+    } else {
+      // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+
+      canvas.style.height = window.innerHeight + 'px';
+      canvas.style.width = window.innerHeight * 750 / 1500 + 'px';
+
+      //canvas.style.width = "300px";
+      //canvas.style.height = "300px";
+    }
+
+    loadingBar.style.display = "block";
+
+    var myGameInstance = null;
+    var mGameid = 123;
+    //上报开始加载
+    function startToon(state) {
+      console.log("startToon " + state);
+
+      if (window.mangatoon) {
+        window.mangatoon.apiRequest({
+          path: '/api/v2/new/activity/sensor/report',
+          method: 'GET',
+          params: {
+            event: 'PageEnter', // TOON固定参数，无需更换修改
+            param: JSON.stringify(
+              {
+                page_name: 'Game Center', // TOON固定参数，无需更换修改
+                page_source_type: state,  // PV：页面加载完成后数据上报、loading：页面加载中
+                game_id: mGameid // 每一个游戏的唯一ID，由Toon提供
+              }
+            )
+          },
+          success: function (result) {
+            console.log("startToon complete")
+          },
+          fail: function (result) {
+            console.log("startToon failed")
+          }
+        })
+      }
+    }
+
+    //加载Toon埋点
+    //startToon('loading');
+    //加载Unity进程
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+      createUnityInstance(canvas, config, (progress) => {
+        progressBarFull.style.width = 100 * progress + "%";
+      }).then((unityInstance) => {
+        loadingBar.style.display = "none";
+        myGameInstance = unityInstance;
+
+        // fullscreenButton.onclick = () => {
+        //   unityInstance.SetFullscreen(1);
+        // };
+      }).catch((message) => {
+        alert(message);
+      });
+    };
+
+    function Log(log) {
+      myGameInstance.SendMessage("ToonSDK", "Log", log);
+    };
+
+    function ToString(returnStr) {
+      var bufferSize = lengthBytesUTF8(returnStr) + 1;
+      var buffer = _malloc(bufferSize);
+      stringToUTF8(returnStr, buffer, bufferSize);
+      return buffer;
+    }
+
+    //============================================= SDK相关开始 =============================================
+    function getPlacementId(type, callback) {
+      Log('getPlacementId Start');
+      if (window.mangatoon && window.mangatoon.getDeviceInfo && window.mangatoon.compareVersion) {
+        Log('getPlacementId Start2');
+        window.mangatoon.getDeviceInfo({
+          success: function (result) {
+            var versionName = result.versionName; //版本号
+            if (result.packageName && result.packageName.indexOf('novel') !== -1) {
+              if (window.mangatoon.compareVersion(versionName, '2.15.00') >= 0) {
+                callback(type + '_game');
+                return true;
+              }
+            } else if (result.packageName && result.packageName.indexOf('audio') !== -1) {
+              callback('download_unlock');
+              return true;
+            } else {
+              if (window.mangatoon.compareVersion(versionName, '2.18.00') >= 0) {
+                callback(type + '_game');
+                return true;
+              }
+            }
+            callback('download_unlock');
+            return true;
+          },
+          fail: function () {
+            callback('download_unlock');
+            return true;
+          }
+        })
+      } else {
+        callback('download_unlock');
+        return true;
+      }
+    }
+
+    function loadRewardAD() {//加载激励广告
+      Log('Ads Load Start');
+      if (window.mangatoon && window.mangatoon.loadAd) {
+        Log('Ads Load Start2');
+        getPlacementId('biz_reward', function (placementId) {
+          Log('Ads Load Start3');
+          window.mangatoon.loadAd({
+            placementId: placementId, //广告位编号
+            gameId: mGameid,  //每一个游戏的唯一ID，由MangaToon提供
+            success: function (result) {
+              // let success_params = {
+              //   msg:'激励广告加载完成，placementId：' + placementId,
+              //   duration: 2 //展示时长，单位秒
+              // };
+              // if (result.msg) {
+              //   success_params.msg += ', msg:' + result.msg
+              // }
+              // window.mangatoon.toast(success_params)
+
+              //TODO 获得缓存
+              myGameInstance.SendMessage('ToonSDK', 'LoadAdsCallback', 1);
+              myGameInstance.SendMessage("ToonSDK", "Log", "load ads complete");
+            },
+            fail: function (result) {
+              // let fail_params = {
+              //   msg:'激励广告加载失败，placementId：' + placementId,
+              //   duration: 2 //展示时长，单位秒
+              // };
+              // if(result.errorCode === -100) {
+              //   fail_params = {
+              //     msg:'没有广告填充，placementId：' + placementId,
+              //     duration: 2 //展示时长，单位秒
+              //   };
+              // }
+              // if (result.msg) {
+              //   fail_params.msg += ', msg:' + result.msg
+              // }
+              // window.mangatoon.toast(fail_params)
+              myGameInstance.SendMessage('ToonSDK', 'LoadAdsCallback', result.errorCode);
+              myGameInstance.SendMessage("ToonSDK", "Log", "load ads fail");
+            },
+          })
+        })
+      }
+    }
+
+    function playRewardAD() {//加载激励广告
+      Log('Ads Show Start');
+      if (window.mangatoon && window.mangatoon.playAd) {
+        Log('Ads Show Start2');
+        getPlacementId('biz_reward', function (placementId) {
+          Log('Ads Show Start3');
+          window.mangatoon.playAd({
+            placementId: placementId, //广告位编号
+            gameId: mGameid,  //每一个游戏的唯一ID，由MangaToon提供
+            success: function (result) {
+              // let success_params = {
+              //   msg:'视频播放完成后回调，可以发送奖励；placementId：' + placementId,
+              //   duration: 2 //展示时长，单位秒
+              // };
+              // if (result.msg) {
+              //   success_params.msg += ', msg:' + result.msg
+              // }
+              // window.mangatoon.toast(success_params)
+
+              myGameInstance.SendMessage('ToonSDK', 'ShowAdsCallback', 1);
+              myGameInstance.SendMessage("ToonSDK", "Log", "show ads complete");
+            },
+            fail: function (result) {
+              // let fail_params = {
+              //   msg:'视频播放失败回调，奖励不发放！！！；placementId：' + placementId,
+              //   duration: 2 //展示时长，单位秒
+              // };
+              // if(result.errorCode === -101) {
+              //   fail_params = {
+              //     msg:'视频播放错误；placementId：' + placementId,
+              //     duration: 2 //展示时长，单位秒
+              //   };
+              // } else if(result.errorCode === -102) {
+              //   fail_params = {
+              //     msg:'用户关闭广告；placementId：' + placementId,
+              //     duration: 2 //展示时长，单位秒
+              //   };
+              // } else if(result.errorCode === -103) {
+              //   fail_params = {
+              //     msg:'广告位错误；placementId：' + placementId,
+              //     duration: 2 //展示时长，单位秒
+              //   };
+              // }
+              // if (result.msg) {
+              //   fail_params.msg += ', msg:' + result.msg
+              // }
+              // window.mangatoon.toast(fail_params)
+
+              myGameInstance.SendMessage('ToonSDK', 'ShowAdsCallback', result.errorCode);
+              myGameInstance.SendMessage("ToonSDK", "Log", "show ads fail");
+            },
+          })
+        })
+      }
+    }
+
+    function getUserData() {
+      window.mangatoon.getDeviceInfo({
+        success: function (result) {
+          //var statusBarHeight = result.statusBarHeight; //状态栏高度，不使用原生状态栏时需要留出这个高度，px
+          //var language = result.language; //当前选择的app语言 cn:中文简体、hant:繁体、en:英文、id:印尼、vi:越南、es:西语、pt:葡语、th:泰语、fr:法语、ar:阿拉伯语
+          //var density = result.density; //设备像素密度，px=dp|pt*density，提供与原生一致的显示效果
+          //var locale = result.locale; //language_country, language为系统语言
+          //var screenWidth = result.screenWidth; //屏幕宽度，px
+          //var screenHeight = result.screenHeight; //屏幕高度，px
+          //var udid = result.udid; //Toon生成的唯一设备ID
+          Log("getDeviceInfo complete");
+          myGameInstance.SendMessage('ToonSDK', 'GetUserDataCallback', JSON.stringify(result));
+        },
+        fail: function (result) {
+          Log("getDeviceInfo failed");
+          myGameInstance.SendMessage('ToonSDK', 'GetUserDataCallback', "");
+        }
+      })
+    };
+
+    function getUserId() {
+      window.mangatoon.getUserId({
+        success: function (res) {
+          alert("res.userId=" + res.userId);
+          myGameInstance.SendMessage('ToonSDK', 'GetUserIdCallback', res.userId);
+        },
+        fail: function (result) {
+          Log("getUserId failed");
+          myGameInstance.SendMessage('ToonSDK', 'GetUserIdCallback', "");
+        }
+      })
+    }
+
+    document.body.appendChild(script);
+    //============================================= SDK相关结束 =============================================
+  </script>
+</body>
+
+</html>
